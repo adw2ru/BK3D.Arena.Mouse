@@ -1,0 +1,129 @@
+	;
+	; STARTUP TITLE
+	;
+	; LINK ORDER: GAME,TITLE
+	;
+	EMT 14
+	MOV #INE,R1
+	CLR R2
+	EMT 20
+	;
+	MTPS #340
+	MOV #161716,@#2
+	MOV #2,@#4
+	;
+	MOV #T3,R1	; TITLE
+	MOV #40000,R2
+	CALL DZX0
+	;
+	MOV @#177714,R0
+	TST @#177662
+KEY:	CMP R0,@#177714
+	BNE FRW
+	TSTB @#177660
+	BPL KEY
+	TST @#177662
+	;
+FRW:	MOV #40000,R0
+	MOV R0,R2	; R2=40000
+0$:	CLR (R0)+
+	TST R0
+	BPL 0$
+	;
+	MOV #230,@#177664
+	MOV #G3,R1	; GAME,	R2=40000
+	CALL DZX0
+	;
+	MOV #COPIER,R1
+	MOV #37000,R0
+	MOV R0,R2	; SAVE 37000
+1$:	MOV (R1)+,(R0)+
+	CMP R0,#40000
+	BNE 1$
+	JMP (R2)
+	;
+COPIER:	MOV #1000,R1	; R0=40000
+	MOV #17000,R2	; MAX 36000 OCT
+1$:	MOV (R0),(R1)+
+	CLR (R0)+
+	SOB R2,1$
+	MOV #1330,@#177664
+	MTPS R2
+	JMP @#1012	; MAIN ENTRY POINT
+	;
+INE:	.BYTE 233,232,224,236,221,0
+	.EVEN
+	;
+;
+; ZX0 decompressor by Alexander	"Sandro" Tishin
+; (sandro.tishin@gmail.com)
+; Uses the "classic" bitstream
+; Position independent code
+; WARNING: Self-modifying code!	Cannot be run from ROM!
+;
+; r1 --	src
+; r2 --	dst
+;
+; Clobbers: all	but r5
+;
+; Returns:
+; r1 --	address	of byte	after source stream
+; r2 --	address	of byte	after decompressed data
+;
+; Uses the observation that Elias code always uses an
+; odd number of	bits, so switch	bit will be always
+; present in the shift register.
+;
+; TODO check on	>32K files
+;
+; 92 bytes total
+DZX0:	MOV #100000,R3		; BIT SHIFT REGISTER
+	SXT DZXOPT		; INITIAL OFFSET
+	; THIS INSN CAN	BE REMOVED IF DECOMPRESSOR
+	; WILL BE RUN ONLY ONCE
+	; BITSTREAM STARTS WITH	AN IMPLICIT LITERAL
+DZXLIT:	CLR R4			; LENGTH BIAS FLAG
+	CALL DZXELI
+1$:	MOVB (R1)+,(R2)+
+	SOB R0,1$
+	; COPY
+	; 0 -- REUSE LAST OFFSET, 1 -- USE NEW
+	ASL R3
+	BCC DZXCPY
+	; READ NEW OFFSET
+DZXNOF:	CALL DZXELI
+	NEGB R0		; WILL KEEP THE	UPPER BYTE
+	SWAB R0
+	TSTB R0		; HIGH PART OF OFFSET EXCEDEED
+	BNE DZXRET	; THE 255 -- END OF DATA
+	BISB (R1)+,R0
+	SCC
+	SXT R4
+	ROR R0
+	ROR R3
+	MOV R0,DZXOPT
+DZXCPY:	CALL DZXELI	; LENGTH
+	SUB R4,R0
+DZXCPL:	.WORD 116222	; MOVB XXX(R2),(R2)+
+DZXOPT:	.WORD -1
+	SOB R0,DZXCPL
+	; 0 -- LITERAL,	1 -- NEW OFFSET
+	ASL R3
+	BCC DZXLIT
+	BR DZXNOF
+	; GET ELIAS GAMMA CODE IN R0
+DZXELI:	MOV #1,R0
+11$:	ASL R3
+	BNE 12$
+	ROR R3
+	BISB (R1)+,R3
+	SWAB R3
+	ASL R3
+12$:	BCS DZXRET
+	ASL R3	; ODD, ALWAYS WILL HAVE	A BIT READY
+	ROL R0
+	BR 11$
+	; TODO REUSE RET INSN FROM SOMEWHERE,IF	AVAILABLE
+DZXRET:	RET
+	;
+	.END
